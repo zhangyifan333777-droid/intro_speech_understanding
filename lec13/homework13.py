@@ -2,48 +2,66 @@ import numpy as np
 import librosa
 
 def lpc(speech, frame_length, frame_skip, order):
-    '''
-    Perform linear predictive analysis of input speech.
-    
-    @param:
-    speech (duration) - input speech waveform
-    frame_length (scalar) - frame length, in samples
-    frame_skip (scalar) - frame skip, in samples
-    order (scalar) - number of LPC coefficients to compute
-    
-    @returns:
-    A (nframes,order+1) - linear predictive coefficients from each frames
-    excitation (nframes,frame_length) - linear prediction excitation frames
-      (only the last frame_skip samples in each frame need to be valid)
-    '''
-    raise RuntimeError("You need to write this part!")
+
+    nframes = int((len(speech) - frame_length) / frame_skip)
+
+    A = np.zeros((nframes, order + 1))
+    excitation = np.zeros((nframes, frame_length))
+
+    for i in range(nframes):
+        start = i * frame_skip
+        frame = speech[start:start + frame_length]
+
+        a = librosa.lpc(frame, order)
+        A[i, :] = a
+
+        e = np.zeros(frame_length)
+        for n in range(order, frame_length):
+            e[n] = frame[n] + np.dot(a[1:], frame[n-order:n][::-1])
+
+        excitation[i, :] = e
+
+    return A, excitation
+
 
 def synthesize(e, A, frame_skip):
-    '''
-    Synthesize speech from LPC residual and coefficients.
-    
-    @param:
-    e (duration) - excitation signal
-    A (nframes,order+1) - linear predictive coefficients from each frames
-    frame_skip (1) - frame skip, in samples
-    
-    @returns:
-    synthesis (duration) - synthetic speech waveform
-    '''
-    raise RuntimeError("You need to write this part!")
+
+    nframes = A.shape[0]
+    order = A.shape[1] - 1
+
+    synthesis = np.zeros(frame_skip * nframes)
+
+    for i in range(nframes):
+        start = i * frame_skip
+        frame_e = e[start:start + frame_skip]
+        a = A[i]
+
+        y = np.zeros(frame_skip)
+
+        for n in range(frame_skip):
+            y[n] = frame_e[n]
+            for k in range(1, min(order + 1, n + 1)):
+                y[n] -= a[k] * y[n - k]
+
+        synthesis[start:start + frame_skip] = y
+
+    return synthesis
+
 
 def robot_voice(excitation, T0, frame_skip):
-    '''
-    Calculate the gain for each excitation frame, then create the excitation for a robot voice.
-    
-    @param:
-    excitation (nframes,frame_length) - linear prediction excitation frames
-    T0 (scalar) - pitch period, in samples
-    frame_skip (scalar) - frame skip, in samples
-    
-    @returns:
-    gain (nframes) - gain for each frame
-    e_robot (nframes*frame_skip) - excitation for the robot voice
-    '''
-    raise RuntimeError("You need to write this part!")
 
+    nframes = excitation.shape[0]
+
+    gain = np.zeros(nframes)
+    e_robot = np.zeros(nframes * frame_skip)
+
+    for i in range(nframes):
+        gain[i] = np.sqrt(np.mean(excitation[i] ** 2))
+
+        start = i * frame_skip
+
+        for n in range(frame_skip):
+            if n % T0 == 0:
+                e_robot[start + n] = gain[i]
+
+    return gain, e_robot
